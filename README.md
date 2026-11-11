@@ -145,7 +145,7 @@ Interactive API documentation will be available at:
    - **Branch**: `main`
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'`
-   - **Health Check Path**: `/api/v1/health`
+   - **Health Check Path**: `/api/health` (or `/api/v1/health`)
 4. Add environment variables according to `.env.example`.
 5. Click **Create Web Service**.
 

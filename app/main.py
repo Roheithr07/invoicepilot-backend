@@ -60,6 +60,7 @@ app.add_middleware(
 
 # Register Routers
 app.include_router(health_router, prefix="/api")
+app.include_router(health_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(customers_router, prefix="/api")

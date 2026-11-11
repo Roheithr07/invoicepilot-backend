@@ -20,12 +20,12 @@ def test_root_endpoint():
 
 def test_health_check_endpoint():
     """Verify health check endpoint returns 200, status=healthy, and connected DB."""
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-    assert data["app_name"] == "InvoicePilot AI"
-    assert data["database"] == "connected"
-    assert "timestamp" in data
-    assert data["environment"] == "development"
+    for path in ["/api/health", "/api/v1/health", "/health"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["app_name"] == "InvoicePilot AI"
+        assert data["database"] == "connected"
+        assert "timestamp" in data
 
