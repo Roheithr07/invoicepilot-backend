@@ -275,3 +275,91 @@ def test_events_recent_polling_fallback(client: TestClient, db_session: Session)
     events_data = resp.json()
     assert "events" in events_data
     assert isinstance(events_data["events"], list)
+
+
+# -------------------------------------------------------------------------
+# 7. Team & Users RBAC Management
+# -------------------------------------------------------------------------
+
+def test_users_listing_rbac_and_tenant_isolation(client: TestClient, db_session: Session):
+    """Verify /api/users respects role privileges and multi-tenant scoping."""
+    seed_test_env(db_session)
+
+    # 1. Staff and Accountant are forbidden
+    resp_staff = client.get("/api/users", headers=get_auth_header(204, "STAFF", 101))
+    assert resp_staff.status_code == 403
+
+    resp_acct = client.get("/api/users", headers=get_auth_header(203, "ACCOUNTANT", 101))
+    assert resp_acct.status_code == 403
+
+    # 2. Business Owner 1 can view users, strictly scoped to business 101
+    resp_owner1 = client.get("/api/users", headers=get_auth_header(202, "BUSINESS_OWNER", 101))
+    assert resp_owner1.status_code == 200
+    users1 = resp_owner1.json()
+    assert isinstance(users1, list)
+    assert len(users1) >= 4
+    # Ensure all returned users belong to business 101
+    for u in users1:
+        assert u["business_id"] == 101
+
+    # 3. Super Admin can view all users across all businesses
+    resp_admin = client.get("/api/users", headers=get_auth_header(201, "SUPER_ADMIN", 101))
+    assert resp_admin.status_code == 200
+    users_admin = resp_admin.json()
+    assert len(users_admin) >= 5
+    business_ids = {u["business_id"] for u in users_admin}
+    assert 101 in business_ids
+    assert 102 in business_ids
+
+
+def test_users_creation_rbac_and_escalation_defense(client: TestClient, db_session: Session):
+    """Verify team member creation rules, tenant assignment, and role escalation defense."""
+    seed_test_env(db_session)
+
+    # 1. Staff cannot create users
+    resp_staff_create = client.post(
+        "/api/users",
+        json={"name": "New Staff", "email": "newstaff@test.com", "password": "Password123!", "role": "STAFF"},
+        headers=get_auth_header(204, "STAFF", 101)
+    )
+    assert resp_staff_create.status_code == 403
+
+    # 2. Business Owner cannot escalate to SUPER_ADMIN or BUSINESS_OWNER
+    resp_esc = client.post(
+        "/api/users",
+        json={"name": "Fake Admin", "email": "fakeadmin@test.com", "password": "Password123!", "role": "SUPER_ADMIN"},
+        headers=get_auth_header(202, "BUSINESS_OWNER", 101)
+    )
+    assert resp_esc.status_code == 403
+
+    # 3. Business Owner can successfully create a STAFF user in their business
+    resp_create_ok = client.post(
+        "/api/users",
+        json={"name": "Support Staff", "email": "support101@test.com", "password": "Password123!", "role": "STAFF"},
+        headers=get_auth_header(202, "BUSINESS_OWNER", 101)
+    )
+    assert resp_create_ok.status_code == 201
+    created = resp_create_ok.json()
+    assert created["email"] == "support101@test.com"
+    assert created["role"] == "STAFF"
+    assert created["business_id"] == 101
+
+
+def test_users_deletion_and_self_deletion_prevention(client: TestClient, db_session: Session):
+    """Verify user deactivation guardrails and self-deletion blocking."""
+    seed_test_env(db_session)
+
+    # 1. Super Admin cannot delete own account
+    resp_self = client.delete("/api/users/201", headers=get_auth_header(201, "SUPER_ADMIN", 101))
+    assert resp_self.status_code == 400
+    assert "Self-Deletion Prevention" in resp_self.json()["detail"]
+
+    # 2. Super Admin can deactivate another user
+    resp_del_ok = client.delete("/api/users/204", headers=get_auth_header(201, "SUPER_ADMIN", 101))
+    assert resp_del_ok.status_code == 200
+    assert resp_del_ok.json()["status"] == "success"
+
+    # Confirm user is deactivated
+    deactivated_user = db_session.query(User).filter(User.id == 204).first()
+    assert deactivated_user.is_active is False
+
