@@ -62,6 +62,9 @@ def sanitize_sensitive_data(text: str) -> str:
     # Redact client_secret if present
     if settings.PAYPAL_CLIENT_SECRET:
         text = text.replace(settings.PAYPAL_CLIENT_SECRET, "[REDACTED_SECRET]")
+    # Redact webhook_id if present
+    if settings.PAYPAL_WEBHOOK_ID and not settings.PAYPAL_WEBHOOK_ID.startswith("your_"):
+        text = text.replace(settings.PAYPAL_WEBHOOK_ID, "[REDACTED_WEBHOOK_ID]")
     return text
 
 
@@ -83,6 +86,11 @@ class PayPalService:
         return bool(client_id and client_secret and not client_id.startswith("your_"))
 
     @classmethod
+    def is_webhook_configured(cls) -> bool:
+        webhook_id = (settings.PAYPAL_WEBHOOK_ID or "").strip()
+        return bool(webhook_id and not webhook_id.startswith("your_"))
+
+    @classmethod
     def get_masked_client_id(cls) -> Optional[str]:
         client_id = (settings.PAYPAL_CLIENT_ID or "").strip()
         if not client_id or client_id.startswith("your_"):
@@ -90,6 +98,15 @@ class PayPalService:
         if len(client_id) <= 8:
             return "******"
         return f"{client_id[:4]}...{client_id[-4:]}"
+
+    @classmethod
+    def get_masked_webhook_id(cls) -> Optional[str]:
+        webhook_id = (settings.PAYPAL_WEBHOOK_ID or "").strip()
+        if not webhook_id or webhook_id.startswith("your_"):
+            return None
+        if len(webhook_id) <= 6:
+            return "******"
+        return f"{webhook_id[:3]}...{webhook_id[-3:]}"
 
     @classmethod
     def clear_token_cache(cls):

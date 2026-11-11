@@ -529,3 +529,108 @@ def test_paypal_health_three_state_distinction(monkeypatch):
         assert "Sandbox authenticated successfully" in health_success["message"]
 
 
+# -------------------------------------------------------------
+# 9. Webhook ID Configuration and Signature Verification Tests
+# -------------------------------------------------------------
+
+def test_webhook_id_configuration_status(monkeypatch):
+    """
+    Verifies that Webhook ID configuration state is properly reported,
+    masked, and never exposed in plaintext.
+    """
+    from app.main import app
+    client = TestClient(app)
+
+    # State A: Webhook ID missing or placeholder
+    monkeypatch.setattr(settings, "PAYPAL_WEBHOOK_ID", "")
+    assert PayPalService.is_webhook_configured() is False
+    assert PayPalService.get_masked_webhook_id() is None
+
+    resp = client.get("/api/paypal/configuration-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["webhook_id_configured"] is False
+
+    monkeypatch.setattr(settings, "PAYPAL_WEBHOOK_ID", "your_sandbox_webhook_id")
+    assert PayPalService.is_webhook_configured() is False
+    assert PayPalService.get_masked_webhook_id() is None
+    resp = client.get("/api/paypal/configuration-status")
+    assert resp.json()["webhook_id_configured"] is False
+
+    # State B: Webhook ID configured
+    test_wh_id = "8KH1234567890ABCD"
+    monkeypatch.setattr(settings, "PAYPAL_WEBHOOK_ID", test_wh_id)
+    assert PayPalService.is_webhook_configured() is True
+    masked = PayPalService.get_masked_webhook_id()
+    assert masked == "8KH...BCD"
+    assert test_wh_id not in masked
+
+    resp = client.get("/api/paypal/configuration-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["webhook_id_configured"] is True
+    # Ensure plaintext webhook ID is NEVER in the response body
+    assert test_wh_id not in resp.text
+
+
+def test_webhook_id_redaction_in_sanitization(monkeypatch):
+    """Verifies that PAYPAL_WEBHOOK_ID is redacted by sanitize_sensitive_data."""
+    test_wh_id = "8KH99887766554433"
+    monkeypatch.setattr(settings, "PAYPAL_WEBHOOK_ID", test_wh_id)
+
+    log_entry = f"Failed verification for webhook id {test_wh_id} with signature."
+    sanitized = sanitize_sensitive_data(log_entry)
+    assert test_wh_id not in sanitized
+    assert "[REDACTED_WEBHOOK_ID]" in sanitized
+
+
+def test_verify_webhook_signature_uses_configured_id(monkeypatch):
+    """
+    Verifies that PayPalService.verify_webhook_signature transmits
+    the configured Webhook ID to PayPal's verification API.
+    """
+    test_wh_id = "8KH_TEST_WEBHOOK_ID"
+    monkeypatch.setattr(settings, "PAYPAL_WEBHOOK_ID", test_wh_id)
+    monkeypatch.setattr(settings, "PAYPAL_CLIENT_ID", "mock_cid")
+    monkeypatch.setattr(settings, "PAYPAL_CLIENT_SECRET", "mock_csec")
+
+    headers = {
+        "PAYPAL-AUTH-ALGO": "SHA256withRSA",
+        "PAYPAL-CERT-URL": "https://api.sandbox.paypal.com/cert",
+        "PAYPAL-TRANSMISSION-ID": "trans-1234",
+        "PAYPAL-TRANSMISSION-SIG": "valid-sig-hash",
+        "PAYPAL-TRANSMISSION-TIME": "2026-11-11T12:00:00Z"
+    }
+    raw_body = b'{"id": "WH-TEST-001", "event_type": "INVOICING.INVOICE.PAID"}'
+
+    mock_oauth_resp = MagicMock(status_code=200)
+    mock_oauth_resp.json.return_value = {"access_token": "mock_tok_for_wh", "expires_in": 3600}
+
+    mock_verify_resp = MagicMock(status_code=200)
+    mock_verify_resp.json.return_value = {"verification_status": "SUCCESS"}
+
+    def mock_post(url, *args, **kwargs):
+        if "oauth2/token" in str(url):
+            return mock_oauth_resp
+        if "verify-webhook-signature" in str(url):
+            payload = kwargs.get("json", {})
+            # Assert that the payload sent to PayPal contains our exact webhook_id
+            assert payload.get("webhook_id") == test_wh_id
+            assert payload.get("transmission_id") == "trans-1234"
+            assert payload.get("auth_algo") == "SHA256withRSA"
+            return mock_verify_resp
+        return MagicMock(status_code=404)
+
+    PayPalService.clear_token_cache()
+    with patch("httpx.Client.post", side_effect=mock_post):
+        is_valid = PayPalService.verify_webhook_signature(headers, raw_body)
+        assert is_valid is True
+
+    # Test missing Webhook ID raises PayPalConfigurationError
+    monkeypatch.setattr(settings, "PAYPAL_WEBHOOK_ID", "")
+    with pytest.raises(PayPalConfigurationError) as exc_info:
+        PayPalService.verify_webhook_signature(headers, raw_body)
+    assert "PAYPAL_WEBHOOK_ID is not configured" in str(exc_info.value)
+
+
+

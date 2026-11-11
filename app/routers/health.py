@@ -46,7 +46,8 @@ def get_health(db: Session = Depends(get_db)):
     paypal_details = {
         "configured": paypal_configured,
         "mode": settings.PAYPAL_MODE,
-        "masked_client_id": PayPalService.get_masked_client_id()
+        "masked_client_id": PayPalService.get_masked_client_id(),
+        "webhook_configured": PayPalService.is_webhook_configured()
     }
 
     overall_status = "healthy" if (db_status == "connected" and storage_ok) else "degraded"
