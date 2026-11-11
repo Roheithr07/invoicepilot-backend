@@ -1,0 +1,42 @@
+# ==============================================================================
+# InvoicePilot AI — Backend Render Blueprint (render.yaml)
+# PayPal AI Hackathon 2026
+# ==============================================================================
+
+services:
+  - type: web
+    name: invoicepilot-backend
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        value: sqlite:///./invoicepilot.db
+      - key: CORS_ORIGINS
+        value: https://invoicepilot-frontend.onrender.com,http://localhost:5173
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: AI_PROVIDER
+        value: deterministic
+      - key: AI_MODEL
+        value: heuristic_regex_v2
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 1440

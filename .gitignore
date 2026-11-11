@@ -1,0 +1,63 @@
+# ==============================================================================
+# InvoicePilot AI Backend — .gitignore
+# ==============================================================================
+
+# Environment variables & secrets (NEVER commit live credentials)
+.env
+.env.local
+.env.*
+*.env
+!.env.example
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# SQLite databases & backups
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+
+# Uploads & ephemeral storage
+uploads/
+data/
+
+# IDE & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
